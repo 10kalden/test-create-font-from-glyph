@@ -164,22 +164,6 @@ def png_to_svg(cleaned_image_path, svg_output_path):
     # rename the temp svg file to the original name
     os.rename(temp_svg_output_path, svg_output_path)
 
-#  cleaned svg
-
-
-
-# def extract_tibetan_character(filename):
-#     tibetan_char = filename.split('_')[0]
-#     codepoints = [ord(char) for char in tibetan_char]
-#     return codepoints
-
-# def generate_glyph_name(codepoints):
-#     glyph_name = 'uni' + ''.join(f'{codepoint:04X}' for codepoint in codepoints)
-#     print(glyph_name)
-#     return glyph_name
-
-
-
 
 
 def parse_svg_to_glyphs(directory_path, width=0, height=0, unicodes=None, glyph_set=None):
@@ -217,7 +201,11 @@ def generate_glyph_name(codepoints):
 directory_path = "data/derge_img/svg"
 glyphs = parse_svg_to_glyphs(directory_path)
 for glyph in glyphs:
+    
     print(glyph)
+    print(f"Glyph Name: {glyph.glyphName}, Unicode Codepoints: {glyph.unicodes}")
+
+
 
 
 def main():
