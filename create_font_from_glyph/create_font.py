@@ -12,14 +12,10 @@ import subprocess
 from xml.etree import ElementTree as ET
 import xml.etree.ElementTree as ET
 from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.ttLib import TTFont, TTLibError
-import os
-import xml.etree.ElementTree as ET
-from fontTools.ttLib import TTFont
-from fontTools.ttLib.tables._g_l_y_f import Glyph
-from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.misc.transform import Identity
-import xml.etree.ElementTree as ET
+from fontTools.svgLib import SVGPath
+from fontTools.ufoLib.glifLib import Glyph
+from fontTools.ufoLib.filenames import userNameToFileName
+
 
 
 
@@ -171,29 +167,43 @@ def png_to_svg(cleaned_image_path, svg_output_path):
 #  cleaned svg
 
 
-def clean_svg(input_file, output_file):
 
-    tree = ET.parse(input_file)
-    root = tree.getroot()
-    for elem in root.iter('{http://www.w3.org/2000/svg}metadata'):
-        root.remove(elem)
+# def extract_tibetan_character(filename):
+#     tibetan_char = filename.split('_')[0]
+#     codepoints = [ord(char) for char in tibetan_char]
+#     return codepoints
 
-    svg_elem = root.find('{http://www.w3.org/2000/svg}svg')
-    if svg_elem is not None:
-        del svg_elem.attrib['version']
-        del svg_elem.attrib['preserveAspectRatio']
-        del svg_elem.attrib['width']
-        del svg_elem.attrib['height']
-    tree.write(output_file, xml_declaration=True, encoding='utf-8')
+# def generate_glyph_name(codepoints):
+#     glyph_name = 'uni' + ''.join(f'{codepoint:04X}' for codepoint in codepoints)
+#     print(glyph_name)
+#     return glyph_name
 
-import os
-import unicodedata
-from fontTools.svgLib import SVGPath
-from fontTools.ttLib import TTFont
-from fontTools.pens.ttGlyphPen import TTGlyphPen
-from svgpathtools import parse_path
-from xml.dom.minidom import parse
 
+
+
+
+def parse_svg_to_glyphs(directory_path, width=0, height=0, unicodes=None, glyph_set=None):
+    glyph_objects = []
+    for filename in os.listdir(directory_path):
+        if filename.endswith('.svg'):
+            svg_file_path = os.path.join(directory_path, filename)
+            codepoints = extract_tibetan_character(filename)
+            glyph_name = generate_glyph_name(codepoints)
+            glyph = parse_svg_to_glyph(svg_file_path, glyph_name, width, height, codepoints, glyph_set)
+            glyph_objects.append(glyph)
+    return glyph_objects
+
+def parse_svg_to_glyph(svg_file_path, glyph_name=None, width=0, height=0, unicodes=None, glyph_set=None):
+    glyph = Glyph(glyph_name, glyph_set)
+    glyph.width = width
+    glyph.height = height
+    glyph.unicodes = unicodes or []
+
+    pen = TTGlyphPen(glyph) 
+    path = SVGPath(svg_file_path) 
+    path.draw(pen)
+
+    return glyph
 
 def extract_tibetan_character(filename):
     tibetan_char = filename.split('_')[0]
@@ -202,89 +212,13 @@ def extract_tibetan_character(filename):
 
 def generate_glyph_name(codepoints):
     glyph_name = 'uni' + ''.join(f'{codepoint:04X}' for codepoint in codepoints)
-    print(glyph_name)
     return glyph_name
-    
 
-def svg_to_contours(svg_file):
-    # Parse the SVG file
-    dom = parse(svg_file)
-    
-    # Get the 'd' attribute of the first 'path' element
-    path_data = dom.getElementsByTagNameNS("http://www.w3.org/2000/svg", 'path')[0].getAttribute('d')
-    
-    # Parse the path data
-    path = parse_path(path_data)
-    
-    contours = []
-    for segment in path:
-        contour = []
-        for t in range(101):
-            point = segment.point(t / 100)
-            contour.append((point.real, point.imag))
-        contours.append(contour)
-    
-    return contours
+directory_path = "data/derge_img/svg"
+glyphs = parse_svg_to_glyphs(directory_path)
+for glyph in glyphs:
+    print(glyph)
 
-
-from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.ttLib import TTFont, newTable
-
-def add_glyph_to_font(font, glyph_name, contours):
-    # Create a new GlyphSet object if it doesn't exist
-    if "glyf" not in font:
-        font["glyf"] = newTable("glyf")
-    
-    # Create a new hmtx table if it doesn't exist
-    if "hmtx" not in font:
-        font["hmtx"] = newTable("hmtx")
-        font["hmtx"].metrics = {}
-    
-    pen = TTGlyphPen(font.getGlyphSet())
-    
-    for contour in contours:
-        pen.moveTo(contour[0])
-        for point in contour[1:]:
-            pen.lineTo(point)
-        pen.closePath()
-    
-    glyph = pen.glyph()
-    font["glyf"].glyphs[glyph_name] = glyph
-
-    # Update the cmap table
-    if "cmap" not in font:
-        from fontTools.ttLib.tables._c_m_a_p import table__c_m_a_p
-        font["cmap"] = table__c_m_a_p()
-    
-    font["cmap"].set({ord(glyph_name[-1]): glyph_name})
-    
-    # Update the hmtx table
-    font["hmtx"].metrics[glyph_name] = (600, 0)  # You may need to adjust these values
-
-
-
-
-def convert_svgs_to_glyphs(input_directory, output_font_file):
-    font = TTFont()
-    for filename in os.listdir(input_directory):
-        if filename.endswith('.svg'):
-            svg_file = os.path.join(input_directory, filename)
-            unicode_codepoints = extract_tibetan_character(filename)
-            glyph_name = generate_glyph_name(unicode_codepoints)
-            contours = svg_to_contours(svg_file)
-            add_glyph_to_font(font, glyph_name, contours)
-    font.save(output_font_file)
-
-# Example usage
-input_directory = 'data/derge_img/cleaned_svg'
-output_font_file = 'output_font.ttf'
-convert_svgs_to_glyphs(input_directory, output_font_file)
-
-
-
-
-    
- 
 
 def main():
     jsonl_paths = list(Path("derge/glyph_ann_reviewed_batch6_ga").iterdir())
@@ -313,9 +247,6 @@ def main():
                             svg_output_path = Path(f"data/derge_img/svg/{filename}.svg")
                             png_to_svg(cleaned_image_path, svg_output_path)
 
-                            input_svg = Path(svg_output_path)
-                            output_cleaned_svg = Path(f"data/derge_img/cleaned_svg/{filename}.svg")
-                            clean_svg(input_svg, output_cleaned_svg)
 
                         except Exception as e:
                             logging.error(f"Error processing image {line['image']}: {e}")
