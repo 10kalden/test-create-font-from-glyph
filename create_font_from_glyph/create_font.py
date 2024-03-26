@@ -9,16 +9,10 @@ import logging
 import traceback
 import re
 import subprocess
-from xml.etree import ElementTree as ET
-import xml.etree.ElementTree as ET
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.svgLib import SVGPath
 from fontTools.ufoLib.glifLib import Glyph
-from fontTools.ufoLib.filenames import userNameToFileName
-
-
-
-
+from fontTools.ttLib import TTFont
 
 
 s3 = monlam_ai_ocr_s3_client
@@ -164,18 +158,20 @@ def png_to_svg(cleaned_image_path, svg_output_path):
     # rename the temp svg file to the original name
     os.rename(temp_svg_output_path, svg_output_path)
 
-
-
-def parse_svg_to_glyphs(directory_path, width=0, height=0, unicodes=None, glyph_set=None):
+# create glyph from svg path
+    
+def create_glyph(directory_path, width=0, height=0, unicodes=None, glyph_set=None):
     glyph_objects = []
     for filename in os.listdir(directory_path):
         if filename.endswith('.svg'):
             svg_file_path = os.path.join(directory_path, filename)
-            codepoints = extract_tibetan_character(filename)
+            codepoints = extract_codepoints(filename)
             glyph_name = generate_glyph_name(codepoints)
             glyph = parse_svg_to_glyph(svg_file_path, glyph_name, width, height, codepoints, glyph_set)
             glyph_objects.append(glyph)
     return glyph_objects
+
+# to parse the svg
 
 def parse_svg_to_glyph(svg_file_path, glyph_name=None, width=0, height=0, unicodes=None, glyph_set=None):
     glyph = Glyph(glyph_name, glyph_set)
@@ -189,24 +185,32 @@ def parse_svg_to_glyph(svg_file_path, glyph_name=None, width=0, height=0, unicod
 
     return glyph
 
-def extract_tibetan_character(filename):
+# for assigning unicode
+def extract_codepoints(filename):
     tibetan_char = filename.split('_')[0]
-    codepoints = [ord(char) for char in tibetan_char]
+    codepoints = [f"U+{ord(char):04X}" for char in tibetan_char]
     return codepoints
 
+# for assigning glyph name
 def generate_glyph_name(codepoints):
-    glyph_name = 'uni' + ''.join(f'{codepoint:04X}' for codepoint in codepoints)
+    glyph_name = 'uni' + ''.join(codepoint.split('+')[1] for codepoint in codepoints)
     return glyph_name
 
-directory_path = "data/derge_img/svg"
-glyphs = parse_svg_to_glyphs(directory_path)
-for glyph in glyphs:
-    
-    print(glyph)
-    print(f"Glyph Name: {glyph.glyphName}, Unicode Codepoints: {glyph.unicodes}")
+# to create new font
+def replace_glyphs_in_font(font_path, svg_directory_path, new_font_path):
+    font = TTFont(font_path)
+    glyph_objects = create_glyph(svg_directory_path)
 
+    for glyph_object in glyph_objects:
+        font['glyf'][glyph_object.glyphName] = glyph_object
+        for unicode in glyph_object.unicodes:
+            font['cmap'].tables[0].cmap[unicode] = glyph_object.glyphName
 
+    font.save(new_font_path)
 
+    print(f"new font created at  {new_font_path}.")
+
+ 
 
 def main():
     jsonl_paths = list(Path("derge/glyph_ann_reviewed_batch6_ga").iterdir())
@@ -234,6 +238,14 @@ def main():
                             filename = Path(cleaned_image_path).stem
                             svg_output_path = Path(f"data/derge_img/svg/{filename}.svg")
                             png_to_svg(cleaned_image_path, svg_output_path)
+
+                            directory_path = "data/derge_img/svg"
+                            glyphs = create_glyph(directory_path)
+                            for glyph in glyphs:
+                                print(f"Glyph Name: {glyph.glyphName}, Unicode Codepoints: {glyph.unicodes}")
+                            
+                        
+                            replace_glyphs_in_font('sambhotaUnicodeBaseShip.ttf', directory_path, 'derge_font.ttf')
 
 
                         except Exception as e:
